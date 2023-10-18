@@ -47,7 +47,8 @@ class VPNPlugin(vpn_db.VPNPluginDb):
     supported_extension_aliases = ["vpnaas",
                                    "vpn-endpoint-groups",
                                    "service-type",
-                                   "vpn-flavors"]
+                                   "vpn-flavors",
+                                   "vpn-aes-ctr"]
     path_prefix = "/vpn"
 
 
