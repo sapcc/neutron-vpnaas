@@ -27,6 +27,7 @@ subunit.log
 !/.coveragerc
 !/.gitignore
 !/.gitreview
+!/.github
 !/.mailmap
 !/.pylintrc
 !/.stestr.conf
