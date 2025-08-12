@@ -498,8 +498,20 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                 flavor_id=flavor_id,
                 admin_state_up=vpns['admin_state_up'],
                 status=lib_constants.PENDING_CREATE)
+            vpnservice_dict = self._make_vpnservice_dict(vpnservice_db)
             context.session.add(vpnservice_db)
-        return self._make_vpnservice_dict(vpnservice_db)
+            registry.publish(
+                v_constants.VPNSERVICE, events.PRECOMMIT_CREATE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=vpnservice_dict['id'],
+                    states=(vpnservice_dict,)))
+        registry.publish(
+            v_constants.VPNSERVICE, events.AFTER_CREATE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=vpnservice_dict['id'],
+                states=(vpnservice_dict,)))
+
+        return vpnservice_dict
 
     def set_external_tunnel_ips(self, context, vpnservice_id, v4_ip=None,
                                 v6_ip=None):
@@ -526,13 +538,29 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
 
     def update_vpnservice(self, context, vpnservice_id, vpnservice):
         vpns = vpnservice['vpnservice']
+        vpn_old_dict = None
+        vpn_new_dict = None
         with db_api.CONTEXT_WRITER.using(context):
             vpns_db = self._get_resource(context, vpn_models.VPNService,
                                          vpnservice_id)
             self.assert_update_allowed(vpns_db)
             if vpns:
+                vpn_old_dict = self._make_vpnservice_dict(vpns_db)
                 vpns_db.update(vpns)
-        return self._make_vpnservice_dict(vpns_db)
+                vpn_new_dict = self._make_vpnservice_dict(vpns_db)
+                registry.publish(
+                    v_constants.VPNSERVICE, events.PRECOMMIT_UPDATE, self,
+                    payload=events.DBEventPayload(
+                        context, resource_id=vpn_old_dict['id'],
+                        states=(vpn_old_dict, vpn_new_dict,),
+                        desired_state=vpn_new_dict))
+        if vpn_new_dict:
+            registry.publish(
+                v_constants.VPNSERVICE, events.AFTER_UPDATE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=vpn_old_dict['id'],
+                    states=(vpn_old_dict, vpn_new_dict,)))
+        return vpn_new_dict
 
     def delete_vpnservice(self, context, vpnservice_id):
         with db_api.CONTEXT_WRITER.using(context):
@@ -544,6 +572,17 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
             vpns_db = self._get_resource(context, vpn_models.VPNService,
                                          vpnservice_id)
             context.session.delete(vpns_db)
+            vpnservice_dict = self._make_vpnservice_dict(vpns_db)
+            registry.publish(
+                v_constants.VPNSERVICE, events.PRECOMMIT_DELETE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=vpnservice_dict['id'],
+                    states=(vpnservice_dict,)))
+        registry.publish(
+            v_constants.VPNSERVICE, events.AFTER_DELETE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=vpnservice_dict['id'],
+                states=(vpnservice_dict,)))
 
     @db_api.CONTEXT_READER
     def _get_vpnservice(self, context, vpnservice_id):
