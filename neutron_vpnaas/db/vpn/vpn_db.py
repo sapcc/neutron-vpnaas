@@ -17,12 +17,14 @@
 import copy
 
 from neutron.db import models_v2
+from neutron_lib.api.definitions import vpn as vpn_def
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
 from neutron_lib import constants as lib_constants
 from neutron_lib.db import api as db_api
 from neutron_lib.db import model_query
+from neutron_lib.db import resource_extend
 from neutron_lib.db import utils as db_utils
 from neutron_lib.exceptions import l3 as l3_exception
 from neutron_lib.exceptions import vpn as vpn_exception
@@ -93,7 +95,8 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
         if utils.in_pending_status(status):
             raise vpn_exception.VPNStateInvalidToUpdate(id=_id, state=status)
 
-    def _make_ipsec_site_connection_dict(self, ipsec_site_conn, fields=None):
+    def _make_ipsec_site_connection_dict(self, ipsec_site_conn, fields=None,
+                                         process_extensions=True):
 
         res = {'id': ipsec_site_conn['id'],
                'tenant_id': ipsec_site_conn['tenant_id'],
@@ -122,6 +125,10 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                'local_ep_group_id': ipsec_site_conn['local_ep_group_id'],
                'peer_ep_group_id': ipsec_site_conn['peer_ep_group_id'],
                }
+
+        if process_extensions:
+            resource_extend.apply_funcs(vpn_def.IPSEC_SITE_CONNECTIONS,
+                                        res, ipsec_site_conn)
 
         return db_utils.resource_fields(res, fields)
 
@@ -343,7 +350,8 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
         if not utils.in_pending_status(conn_db.status) or updated_pending:
             conn_db.status = new_status
 
-    def _make_ikepolicy_dict(self, ikepolicy, fields=None):
+    def _make_ikepolicy_dict(self, ikepolicy, fields=None,
+                             process_extensions=True):
         res = {'id': ikepolicy['id'],
                'tenant_id': ikepolicy['tenant_id'],
                'name': ikepolicy['name'],
@@ -358,6 +366,10 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                'ike_version': ikepolicy['ike_version'],
                'pfs': ikepolicy['pfs']
                }
+
+        if process_extensions:
+            resource_extend.apply_funcs(vpn_def.IKE_POLICIES,
+                                        res, ikepolicy)
 
         return db_utils.resource_fields(res, fields)
 
@@ -428,7 +440,8 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                                           self._make_ikepolicy_dict,
                                           filters=filters, fields=fields)
 
-    def _make_ipsecpolicy_dict(self, ipsecpolicy, fields=None):
+    def _make_ipsecpolicy_dict(self, ipsecpolicy, fields=None,
+                               process_extensions=True):
 
         res = {'id': ipsecpolicy['id'],
                'tenant_id': ipsecpolicy['tenant_id'],
@@ -444,6 +457,10 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                },
                'pfs': ipsecpolicy['pfs']
                }
+
+        if process_extensions:
+            resource_extend.apply_funcs(vpn_def.IPSEC_POLICIES,
+                                        res, ipsecpolicy)
 
         return db_utils.resource_fields(res, fields)
 
@@ -514,7 +531,8 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                                           self._make_ipsecpolicy_dict,
                                           filters=filters, fields=fields)
 
-    def _make_vpnservice_dict(self, vpnservice, fields=None):
+    def _make_vpnservice_dict(self, vpnservice, fields=None,
+                              process_extensions=True):
         res = {'id': vpnservice['id'],
                'name': vpnservice['name'],
                'description': vpnservice['description'],
@@ -526,6 +544,11 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                'external_v4_ip': vpnservice['external_v4_ip'],
                'external_v6_ip': vpnservice['external_v6_ip'],
                'status': vpnservice['status']}
+
+        if process_extensions:
+            resource_extend.apply_funcs(vpn_def.VPNSERVICES,
+                                        res, vpnservice)
+
         return db_utils.resource_fields(res, fields)
 
     def create_vpnservice(self, context, vpnservice):
@@ -703,7 +726,8 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                 raise vpn_exception.SubnetInUseByEndpointGroup(
                     subnet_id=subnet_id, group_id=group['id'])
 
-    def _make_endpoint_group_dict(self, endpoint_group, fields=None):
+    def _make_endpoint_group_dict(self, endpoint_group, fields=None,
+                                  process_extensions=True):
         res = {'id': endpoint_group['id'],
                'tenant_id': endpoint_group['tenant_id'],
                'name': endpoint_group['name'],
@@ -711,6 +735,12 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                'type': endpoint_group['endpoint_type'],
                'endpoints': [ep['endpoint']
                              for ep in endpoint_group['endpoints']]}
+
+        if process_extensions:
+            # TODO(seba): use constant from neutron-lib once it's there
+            resource_extend.apply_funcs('endpoint_groups',
+                                        res, endpoint_group)
+
         return db_utils.resource_fields(res, fields)
 
     def create_endpoint_group(self, context, endpoint_group):
