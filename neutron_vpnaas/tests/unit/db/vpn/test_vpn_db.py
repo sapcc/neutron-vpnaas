@@ -30,6 +30,7 @@ from neutron.tests.unit.db import test_db_base_plugin_v2 as test_db_plugin
 from neutron.tests.unit.extensions import test_l3 as test_l3_plugin
 from neutron_lib.api.definitions import vpn
 from neutron_lib.callbacks import events
+from neutron_lib.callbacks import registry
 from neutron_lib import constants as lib_constants
 from neutron_lib import context
 from neutron_lib.db import api as db_api
@@ -1846,6 +1847,39 @@ class TestVpnDatabase(base.NeutronDbPluginV2TestCase, NeutronResourcesMixin):
                                'router_id': router['id'],
                                'flavor_id': None,
                                'admin_state_up': True}}
+
+    def test_registry_create_hooks(self):
+        services = [
+            constants.VPNSERVICE, constants.IPSEC_SITE_CONNECTION,
+            constants.ENDPOINT_GROUP,
+        ]
+        svc_events = [events.PRECOMMIT_CREATE, events.AFTER_CREATE]
+        svc_mocks = {}
+        try:
+            for service in services:
+                svc_mocks[service] = {}
+                for event in svc_events:
+                    svc_mocks[service][event] = method = mock.Mock()
+                    registry.subscribe(method, service, event)
+
+            # create a vpnservice + ipsec site connection + related objects
+            # and one endpoint group
+            info = self.prepare_for_ipsec_connection_create()
+            info['ipsec_site_connection']['peer_cidrs'] = ['10.1.0.0/24',
+                                                           '10.2.0.0/24']
+            self.plugin.create_ipsec_site_connection(self.context, info)
+            self.create_endpoint_group(
+                group_type='cidr', endpoints=['20.1.0.0/24', '20.2.0.0/24'])
+
+            # make sure all have been called once
+            for service in services:
+                for event in svc_events:
+                    svc_mocks[service][event].assert_called_once_with(
+                        service, event, mock.ANY, payload=mock.ANY)
+        finally:
+            for service, event_mocks in svc_mocks.items():
+                for event, mock_method in event_mocks.items():
+                    registry.unsubscribe(mock_method, service, event)
 
     def test_create_vpnservice(self):
         private_subnet, router = self.create_basic_topology()

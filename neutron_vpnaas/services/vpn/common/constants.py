@@ -44,3 +44,8 @@ DEVICE_OWNER_TRANSIT_NETWORK = constants.DEVICE_OWNER_NETWORK_PREFIX + \
 OVN_AGENT_VPN_SB_CFG_KEY = 'neutron:ovn-vpnagent-sb-cfg'
 OVN_AGENT_VPN_DESC_KEY = 'neutron:description-vpnagent'
 OVN_AGENT_VPN_ID_KEY = 'neutron:ovn-vpnagent-id'
+
+# resource names
+VPNSERVICE = 'vpnservice'
+IPSEC_SITE_CONNECTION = 'ipsec-site-connection'
+ENDPOINT_GROUP = 'endpointgroup'

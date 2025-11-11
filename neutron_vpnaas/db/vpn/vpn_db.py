@@ -14,6 +14,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
+
 from neutron.db import models_v2
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
@@ -200,6 +202,18 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                     ipsec_site_connection_id=ipsec_site_conn_db.id
                 )
                 context.session.add(peer_cidr_db)
+            registry.publish(
+                v_constants.IPSEC_SITE_CONNECTION, events.PRECOMMIT_CREATE,
+                self,
+                payload=events.DBEventPayload(
+                    context, resource_id=ipsec_site_conn_db['id'],
+                    request_body=ipsec_sitecon,
+                    states=(ipsec_site_conn_db,)))
+        registry.publish(
+            v_constants.IPSEC_SITE_CONNECTION, events.AFTER_CREATE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=ipsec_site_conn_db['id'],
+                states=(ipsec_site_conn_db,)))
         return self._make_ipsec_site_connection_dict(ipsec_site_conn_db)
 
     def update_ipsec_site_connection(
@@ -246,8 +260,23 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
             # previous, if unchanged (to be able to validate above).
             del ipsec_sitecon["peer_cidrs"]
             if ipsec_sitecon:
+                ipsec_site_conn_db_old = copy.deepcopy(ipsec_site_conn_db)
                 ipsec_site_conn_db.update(ipsec_sitecon)
+                registry.publish(
+                    v_constants.IPSEC_SITE_CONNECTION, events.PRECOMMIT_UPDATE,
+                    self,
+                    payload=events.DBEventPayload(
+                        context, resource_id=ipsec_site_conn_db['id'],
+                        request_body=ipsec_sitecon,
+                        states=(ipsec_site_conn_db_old, ipsec_site_conn_db,),
+                        desired_state=ipsec_sitecon))
             result = self._make_ipsec_site_connection_dict(ipsec_site_conn_db)
+        if ipsec_sitecon:
+            registry.publish(
+                v_constants.VPNSERVICE, events.AFTER_UPDATE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=ipsec_site_conn_db['id'],
+                    states=(ipsec_site_conn_db_old, ipsec_site_conn_db,)))
         if changed_peer_cidrs:
             result['peer_cidrs'] = new_peer_cidrs
         return result
@@ -256,7 +285,24 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
         with db_api.CONTEXT_WRITER.using(context):
             ipsec_site_conn_db = self._get_resource(
                 context, vpn_models.IPsecSiteConnection, ipsec_site_conn_id)
+            registry.publish(
+                v_constants.IPSEC_SITE_CONNECTION,
+                events.BEFORE_DELETE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=ipsec_site_conn_db['id'],
+                    states=(ipsec_site_conn_db,)))
             context.session.delete(ipsec_site_conn_db)
+            registry.publish(
+                v_constants.IPSEC_SITE_CONNECTION,
+                events.PRECOMMIT_DELETE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=ipsec_site_conn_db['id'],
+                    states=(ipsec_site_conn_db,)))
+        registry.publish(
+            v_constants.IPSEC_SITE_CONNECTION, events.AFTER_DELETE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=ipsec_site_conn_db['id'],
+                states=(ipsec_site_conn_db,)))
 
     def _get_ipsec_site_connection(
             self, context, ipsec_site_conn_id):
@@ -499,6 +545,17 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                 admin_state_up=vpns['admin_state_up'],
                 status=lib_constants.PENDING_CREATE)
             context.session.add(vpnservice_db)
+            registry.publish(
+                v_constants.VPNSERVICE, events.PRECOMMIT_CREATE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=vpnservice_db['id'],
+                    states=(vpnservice_db,)))
+        registry.publish(
+            v_constants.VPNSERVICE, events.AFTER_CREATE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=vpnservice_db['id'],
+                states=(vpnservice_db,)))
+
         return self._make_vpnservice_dict(vpnservice_db)
 
     def set_external_tunnel_ips(self, context, vpnservice_id, v4_ip=None,
@@ -526,12 +583,26 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
 
     def update_vpnservice(self, context, vpnservice_id, vpnservice):
         vpns = vpnservice['vpnservice']
+        vpn_old = None
         with db_api.CONTEXT_WRITER.using(context):
             vpns_db = self._get_resource(context, vpn_models.VPNService,
                                          vpnservice_id)
             self.assert_update_allowed(vpns_db)
             if vpns:
+                vpn_old = copy.deepcopy(vpns_db)
                 vpns_db.update(vpns)
+                registry.publish(
+                    v_constants.VPNSERVICE, events.PRECOMMIT_UPDATE, self,
+                    payload=events.DBEventPayload(
+                        context, resource_id=vpn_old['id'],
+                        states=(vpn_old, vpns_db,),
+                        desired_state=vpns_db))
+        if vpn_old:
+            registry.publish(
+                v_constants.VPNSERVICE, events.AFTER_UPDATE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=vpn_old['id'],
+                    states=(vpn_old, vpns_db,)))
         return self._make_vpnservice_dict(vpns_db)
 
     def delete_vpnservice(self, context, vpnservice_id):
@@ -544,6 +615,16 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
             vpns_db = self._get_resource(context, vpn_models.VPNService,
                                          vpnservice_id)
             context.session.delete(vpns_db)
+            registry.publish(
+                v_constants.VPNSERVICE, events.PRECOMMIT_DELETE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=vpns_db['id'],
+                    states=(vpns_db,)))
+        registry.publish(
+            v_constants.VPNSERVICE, events.AFTER_DELETE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=vpns_db['id'],
+                states=(vpns_db,)))
 
     @db_api.CONTEXT_READER
     def _get_vpnservice(self, context, vpnservice_id):
@@ -650,6 +731,16 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
                     endpoint_group_id=endpoint_group_db.id
                 )
                 context.session.add(endpoint_db)
+            registry.publish(
+                v_constants.ENDPOINT_GROUP, events.PRECOMMIT_CREATE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=endpoint_group_db['id'],
+                    states=(endpoint_group_db,)))
+        registry.publish(
+            v_constants.ENDPOINT_GROUP, events.AFTER_CREATE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=endpoint_group_db['id'],
+                states=(endpoint_group_db,)))
         return self._make_endpoint_group_dict(endpoint_group_db)
 
     def update_endpoint_group(self, context, endpoint_group_id,
@@ -660,7 +751,19 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
             endpoint_group_db = self._get_resource(context,
                                                    vpn_models.VPNEndpointGroup,
                                                    endpoint_group_id)
+            endpoint_group_old_db = copy.deepcopy(endpoint_group_db)
             endpoint_group_db.update(group_changes)
+            registry.publish(
+                v_constants.ENDPOINT_GROUP, events.PRECOMMIT_UPDATE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=endpoint_group_db['id'],
+                    states=(endpoint_group_old_db, endpoint_group_db,),
+                    desired_state=endpoint_group_db))
+        registry.publish(
+            v_constants.ENDPOINT_GROUP, events.AFTER_UPDATE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=endpoint_group_db['id'],
+                states=(endpoint_group_old_db, endpoint_group_db,)))
         return self._make_endpoint_group_dict(endpoint_group_db)
 
     def delete_endpoint_group(self, context, endpoint_group_id):
@@ -669,6 +772,16 @@ class VPNPluginDb(vpnaas.VPNPluginBase,
             endpoint_group_db = self._get_resource(
                 context, vpn_models.VPNEndpointGroup, endpoint_group_id)
             context.session.delete(endpoint_group_db)
+            registry.publish(
+                v_constants.ENDPOINT_GROUP, events.PRECOMMIT_DELETE, self,
+                payload=events.DBEventPayload(
+                    context, resource_id=endpoint_group_db['id'],
+                    states=(endpoint_group_db,)))
+        registry.publish(
+            v_constants.ENDPOINT_GROUP, events.AFTER_DELETE, self,
+            payload=events.DBEventPayload(
+                context, resource_id=endpoint_group_db['id'],
+                states=(endpoint_group_db,)))
 
     @db_api.CONTEXT_READER
     def get_endpoint_group(self, context, endpoint_group_id, fields=None):
