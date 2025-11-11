@@ -22,9 +22,22 @@ from neutron_lib import exceptions as nexception
 from neutron_lib.exceptions import vpn as vpn_exception
 from neutron_lib.plugins import constants as plugin_const
 from neutron_lib.plugins import directory
+from oslo_config import cfg
 
 from neutron_vpnaas._i18n import _
 from neutron_vpnaas.services.vpn.common import constants
+
+
+VPN_VALIDATOR_OPTS = [
+    cfg.BoolOpt('disconnected_subnets_mode', default=False,
+                help=("Run VPNaaS in disconected-subnets mode. This means, "
+                      "that local endpoints are not connected directly to the "
+                      "router (but via e.g. BGPVPN instead). "
+                      "Therefore we don't accept local endpoints.")),
+]
+
+
+cfg.CONF.register_opts(VPN_VALIDATOR_OPTS, 'vpnaas')
 
 
 class VpnReferenceValidator(object):
@@ -251,12 +264,22 @@ class VpnReferenceValidator(object):
         """
         if not local_ip_version:
             # Using endpoint groups
-            local_subnets = self._get_local_subnets(
-                context, ipsec_sitecon['local_epg_subnets'])
-            self._check_local_subnets_on_router(
-                context, vpnservice['router_id'], local_subnets)
-            local_ip_version = self._check_local_endpoint_ip_versions(
-                ipsec_sitecon['local_ep_group_id'], local_subnets)
+            if cfg.CONF.vpnaas.disconnected_subnets_mode:
+                # in this mode we only except a cidr epg locally
+                # as this was reserved for the peer epg previously, we're using
+                # the same peer-named methods here as well
+                local_cidrs = self._get_peer_cidrs(
+                    ipsec_sitecon['local_epg_subnets'])
+                local_ip_version = self._check_peer_endpoint_ip_versions(
+                    ipsec_sitecon['local_ep_group_id'], local_cidrs)
+            else:
+                local_subnets = self._get_local_subnets(
+                    context, ipsec_sitecon['local_epg_subnets'])
+                self._check_local_subnets_on_router(
+                    context, vpnservice['router_id'], local_subnets)
+                local_ip_version = self._check_local_endpoint_ip_versions(
+                    ipsec_sitecon['local_ep_group_id'], local_subnets)
+
             peer_cidrs = self._get_peer_cidrs(ipsec_sitecon['peer_epg_cidrs'])
             peer_ip_version = self._check_peer_endpoint_ip_versions(
                 ipsec_sitecon['peer_ep_group_id'], peer_cidrs)
